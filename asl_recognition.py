@@ -29,12 +29,11 @@ camera = Camera(assets_path=args.assets_path,
                 n_frames=args.n_frames,
                 seconds_to_be_recorded=args.predictions_delta)
 asl_recognizer = ASLRecognizer(camera=camera, assets_path=assets_path,
-                                    predictions_delta=args.predictions_delta)
+                               predictions_delta=args.predictions_delta)
 
 camera.start()
 asl_recognizer.start()
 print(f"Press ESC to quit")
-
 
 # time.sleep(args.sleep_time)
 

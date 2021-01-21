@@ -14,7 +14,7 @@ from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from modules.utils import show_img
+from modules.utils import show_img, plot_losses
 
 
 class ASLRecognizerModel(nn.Module):
@@ -54,7 +54,7 @@ class ASLRecognizerModel(nn.Module):
         assert isinstance(lstm_bidirectional, bool)
         assert isinstance(lstm_hidden_size, int) and lstm_hidden_size >= 1
         assert not lstm_dropout or (isinstance(lstm_dropout, float) and 0 < lstm_dropout < 1)
-        self.lstm = nn.LSTM(input_size=self.img_embeddings_size * 2,
+        self.lstm = nn.LSTM(input_size=self.img_embeddings_size,
                             hidden_size=lstm_hidden_size, num_layers=lstm_num_layers, bidirectional=lstm_bidirectional,
                             dropout=lstm_dropout if lstm_dropout else 0, batch_first=True)
 
@@ -73,15 +73,15 @@ class ASLRecognizerModel(nn.Module):
                                                      std=[0.229, 0.224, 0.225])(X).to(self.device)):
             feature_vectors_rgb[i] = self.features_extractor_rgb(X_i)
 
-        # feature extraction from optical flows
-        X_lk = self.get_optical_flow(X)
-        feature_vectors_lk = torch.zeros(size=(X_lk.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
-        for i, X_i in enumerate(X_lk):
-            feature_vectors_lk[i, 1:] = self.features_extractor_lk(X_i)
-
-        # concatenates the two embeddings
-        feature_vectors = torch.cat([feature_vectors_rgb, feature_vectors_lk], dim=-1).to(self.device)
-
+        # # feature extraction from optical flows
+        # X_lk = self.get_optical_flow(X)
+        # feature_vectors_lk = torch.zeros(size=(X_lk.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
+        # for i, X_i in enumerate(X_lk):
+        #     feature_vectors_lk[i, 1:] = self.features_extractor_lk(X_i)
+        #
+        # # concatenates the two embeddings
+        # feature_vectors = torch.cat([feature_vectors_rgb, feature_vectors_lk], dim=-1).to(self.device)
+        feature_vectors = feature_vectors_rgb.to(self.device)
         # final prediction
         predictions = self.lstm(feature_vectors)[0][:, -1, :]
         predictions = self.classification(predictions)
@@ -222,6 +222,10 @@ def train_model(model: nn.Module,
                 }))
             if verbose and phase == "val":
                 print(f"\n", stats.to_string(index=False))
+                if epoch > 1:
+                    plot_losses(train_losses=stats.loc[(stats["phase"] == "train")]["avg loss"],
+                                val_losses=stats.loc[(stats["phase"] == "val")]["avg loss"])
+
             # save the best model
             avg_epoch_f1 = np.mean(epoch_f1)
             if phase == 'val' and avg_epoch_f1 > best_epoch_f1:

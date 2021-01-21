@@ -1,19 +1,13 @@
-from os import makedirs, listdir
+from os import makedirs
 from os.path import exists, join
-import re
-
-from itertools import product
-
-from pprint import pprint, pformat
 
 from threading import Thread
 import cv2
 import time
 import numpy as np
-import matplotlib.pyplot as plt
 
 import torch
-
+import torchvision.transforms as transforms
 
 class Camera:
 
@@ -22,7 +16,8 @@ class Camera:
                  n_frames: int = 16,
                  seconds_to_be_recorded: float = 2,
                  window_size: int = 175,
-                 window_color: tuple = (0, 255, 0)):
+                 window_color: tuple = (0, 0, 255),
+                 window_name: str = 'ASL Recognizer'):
         # eventually creates output directory
         self.assets_path = assets_path
         self.samples_path, self.letters_examples = join(assets_path, "samples"), join(assets_path, "letters_examples")
@@ -39,6 +34,8 @@ class Camera:
         self.state_starting_time = None
         self.seconds_to_be_recorded = seconds_to_be_recorded
         self.saved_frames = []
+        self.asl_recognizer = None
+        self.window_name = window_name
 
         # sets the resolution of the webcam
         assert isinstance(resolution, int) or isinstance(resolution, tuple) or isinstance(resolution, list)
@@ -86,10 +83,10 @@ class Camera:
                 cv2.putText(img=show_frame, text=f"FPS: {np.round(fps)}",
                             org=(0, 30), color=(0, 255, 0),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, thickness=1)
-            cv2.imshow('ASL Dataset Maker', show_frame)
+            cv2.imshow(self.window_name, show_frame)
 
             pressed_key = cv2.waitKey(1)
-            if pressed_key == 27:
+            if pressed_key == 27 or cv2.getWindowProperty(self.window_name, cv2.WND_PROP_VISIBLE) == 0:
                 self.stop()
 
     def frame_elaboration(self, save_frame, horizontal_flip: bool = True):
@@ -110,6 +107,23 @@ class Camera:
                     org=(0 + 20, self.resolution[1] - 20),
                     color=(255, 255, 255),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5, thickness=1)
+
+        # show a progress bar
+        percentage = (time.time() - self.asl_recognizer.waiting_since) / self.asl_recognizer.predictions_delta
+        show_frame = cv2.rectangle(show_frame,
+                                   (self.window_center[0] - self.window_size,
+                                    self.window_center[1] - self.window_size),
+                                   (self.window_center[0] - self.window_size + int(
+                                       self.window_size * percentage * 2),
+                                    25 + self.window_size),
+                                   color=self.window_color, thickness=-1)
+
+        # upper label
+        if self.asl_recognizer:
+            cv2.putText(img=show_frame, text="".join(self.asl_recognizer.predicted_letters[-15:]),
+                        org=(self.window_center[0] - self.window_size, self.window_center[1] - self.window_size - 20),
+                        color=self.window_color,
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.25, thickness=1)
 
         # crops the area in the rectangle
         save_frame = save_frame[self.window_center[1] - self.window_size: self.window_center[1] + self.window_size,
@@ -137,4 +151,16 @@ class Camera:
         video = torch.from_numpy(np.array(self.saved_frames)).permute(0, 3, 1, 2) / 255
         if frames_per_video:
             video = video[np.linspace(start=0, stop=video.shape[0], num=frames_per_video, endpoint=False, dtype=int)]
+        # preprocess the video
+        new_video = torch.zeros(size=(video.shape[0], video.shape[1], 224, 224))
+        for i_frame, frame in enumerate(video):
+            transformations = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.Resize(size=224),
+                transforms.ToTensor()
+            ])
+            new_video[i_frame] = transformations(frame)
+        video = new_video
+        from modules.utils import show_img
+        show_img(video)
         return video

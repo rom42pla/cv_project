@@ -46,10 +46,10 @@ if __name__ == '__main__':
                 "frames_per_video": 12,
                 "epochs": 10,
                 "learning_rate": 1e-4,
-                "batch_size": 2,
+                "batch_size": 3,
                 "lstm_num_layers": 1,
                 "lstm_bidirectional": False,
-                "lstm_hidden_size": 1024,
+                "lstm_hidden_size": 512,
                 "lstm_dropout": 0,
             }
         }

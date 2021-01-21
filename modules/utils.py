@@ -1,21 +1,12 @@
-import time
-from copy import deepcopy
 import json
 from typing import Union
 
 import numpy as np
-import pandas as pd
-from sklearn.metrics import f1_score
+import seaborn as sns
 
 import torch
-from torch.utils.data import DataLoader
-import torch.nn as nn
-import torchvision.transforms as transforms
 
 import matplotlib.pyplot as plt
-from tqdm import tqdm
-
-from modules.data import VideoDataset
 
 
 def save_json(content: dict, filepath: str):
@@ -55,3 +46,14 @@ def build_vocab(targets: Union[list, tuple, set]):
         if target not in vocab:
             vocab[target] = len(vocab)
     return vocab
+
+def plot_losses(train_losses, val_losses, title: str = None):
+    # plots the loss chart
+    sns.lineplot(y=train_losses, x=range(1, len(train_losses) + 1))
+    sns.lineplot(y=val_losses, x=range(1, len(val_losses) + 1))
+    plt.title(f'Loss {"" if not title else f"for model {title}"}')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.legend(['train', 'validation'], loc='upper right')
+    plt.tight_layout()
+    plt.show()
