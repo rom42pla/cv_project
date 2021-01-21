@@ -208,14 +208,7 @@ def train_model(model: nn.Module,
                                                                f1_score(y.cpu(),
                                                                         torch.argmax(y_pred, dim=-1).cpu(),
                                                                         average="macro")
-
-            # deep copy the model
-            avg_epoch_f1 = np.mean(epoch_f1)
-            if phase == 'val' and avg_epoch_f1 > best_epoch_f1:
-                best_epoch_f1, best_model_weights = avg_epoch_f1, \
-                                                    deepcopy(model.state_dict())
-                if verbose:
-                    print(f"Found best model with F1 {avg_epoch_f1}")
+            # print some stats
             stats = stats.append(pd.DataFrame(
                 index=[len(stats)],
                 data={
@@ -226,6 +219,17 @@ def train_model(model: nn.Module,
                 }))
             if verbose and phase == "val":
                 print(f"\n", stats.to_string(index=False))
+            # save the best model
+            avg_epoch_f1 = np.mean(epoch_f1)
+            if phase == 'val' and avg_epoch_f1 > best_epoch_f1:
+                best_epoch_f1, best_model_weights = avg_epoch_f1, \
+                                                    deepcopy(model.state_dict())
+                original_device = model.device
+                model = model.cpu()
+                torch.save(model.state_dict(), filepath)
+                model = model.to(original_device)
+                if verbose:
+                    print(f"Found best model with F1 {avg_epoch_f1} and saved to {filepath}")
 
     if verbose:
         time_elapsed = time.time() - since
@@ -234,12 +238,4 @@ def train_model(model: nn.Module,
 
     # load best model weights
     model.load_state_dict(best_model_weights)
-    # saves to a file
-    if filepath:
-        original_device = model.device
-        model = model.cpu()
-        torch.save(model.state_dict(), filepath)
-        model = model.to(original_device)
-        if verbose:
-            print(f"Model's weights saved to {filepath}")
     return model, best_epoch_f1
