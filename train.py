@@ -7,6 +7,8 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
+from modules.data import load_dataset
+
 np.random.seed(0)
 
 import torch
@@ -15,8 +17,8 @@ import torchvision.transforms as transforms
 
 torch.manual_seed(0)
 
-from model import ASLRecognizerModel
-from modules.utils import read_json, save_json, show_img, load_dataset, build_vocab, vocab_to_tensor, train_model
+from model import ASLRecognizerModel, train_model
+from modules.utils import read_json, save_json, show_img, build_vocab
 
 if __name__ == '__main__':
     assets_path = join(".", "assets")
@@ -80,6 +82,7 @@ if __name__ == '__main__':
                                lstm_bidirectional=parameters["training"]["lstm_bidirectional"],
                                lstm_hidden_size=parameters["training"]["lstm_hidden_size"],
                                lstm_dropout=parameters["training"]["lstm_dropout"])
+
     train_model(model=model, filepath=join(model_path, "ASLRecognizer_weights.pth"),
                 epochs=parameters["training"]["epochs"], lr=parameters["training"]["learning_rate"],
                 data_augmentation=True,
