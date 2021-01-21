@@ -1,3 +1,4 @@
 /assets/samples/*/take_*/
+/assets/model/*.pt*
 */.idea
 */__pycache__

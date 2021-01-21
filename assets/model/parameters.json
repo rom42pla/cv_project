@@ -1,0 +1,19 @@
+{
+    "transformations": {
+        "resize_size": 256,
+        "random_crop_size": 224,
+        "random_horizontal_flip_probability": 0.5,
+        "random_vertical_flip_probability": 0.01,
+        "random_rotation_degrees": 15
+    },
+    "training": {
+        "frames_per_video": 12,
+        "epochs": 10,
+        "learning_rate": 0.0001,
+        "batch_size": 2,
+        "lstm_num_layers": 1,
+        "lstm_bidirectional": false,
+        "lstm_hidden_size": 1024,
+        "lstm_dropout": 0
+    }
+}
