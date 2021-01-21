@@ -40,6 +40,7 @@ class ASLRecognizerModel(nn.Module):
 
         # feature extractor for optical flow
         resnet_lk = models.resnet34(pretrained=False)
+        resnet_lk.conv1 = nn.Conv2d(2, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
         self.features_extractor_lk = nn.Sequential(
             *list(resnet_lk.children())[:-1],
             nn.Flatten()
@@ -75,8 +76,7 @@ class ASLRecognizerModel(nn.Module):
         # feature extraction from optical flows
         X_lk = self.get_optical_flow(X)
         feature_vectors_lk = torch.zeros(size=(X_lk.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
-        for i, X_i in enumerate(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                     std=[0.229, 0.224, 0.225])(X_lk).to(self.device)):
+        for i, X_i in enumerate(X_lk):
             feature_vectors_lk[i, 1:] = self.features_extractor_lk(X_i)
 
         # concatenates the two embeddings
@@ -97,22 +97,25 @@ class ASLRecognizerModel(nn.Module):
 
     def get_optical_flow(self, X):
         def lucas_kanade(frame1, frame2):
-            frame1, frame2 = cv2.cvtColor(frame1.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY), \
-                             cv2.cvtColor(frame2.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY)
-            mask = np.zeros((*frame1.shape, 3))
-            mask[..., 1] = 255
-            flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            frame1, frame2 = (cv2.cvtColor(frame1.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8), \
+                             (cv2.cvtColor(frame2.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8)
+            optical_flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            optical_flow[np.isnan(optical_flow)] = 0
+            optical_flow = np.clip(optical_flow, 0, 1)
+            optical_flow = torch.as_tensor(optical_flow).to(self.device).permute(2, 0, 1)
 
-            magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-            mask[..., 0] = angle * 180 / np.pi / 2
-            mask[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
-            # Converts HSV to RGB (BGR) color representation
-            rgb = cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)
-            rgb[np.isnan(rgb)] = 0
-            optical_flow = torch.as_tensor(rgb).to(self.device).permute(2, 0, 1) / 255
+            # mask = np.zeros((*frame1.shape, 3))
+            # mask[..., 1] = 255
+            # magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            # mask[..., 0] = angle * 180 / np.pi / 2
+            # mask[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
+            # # Converts HSV to RGB (BGR) color representation
+            # rgb = cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)
+            # rgb[np.isnan(rgb)] = 0
+            # optical_flow = torch.as_tensor(rgb).to(self.device).permute(2, 0, 1) / 255
             return optical_flow
 
-        X_lk = torch.zeros(size=(X.shape[0], X.shape[1] - 1, *X.shape[2:])).to(self.device)
+        X_lk = torch.zeros(size=(X.shape[0], X.shape[1] - 1, 2, *X.shape[3:])).to(self.device)
         for i_video, video in enumerate(X):
             for i_frame in range(X_lk.shape[1]):
                 X_lk[i_video][i_frame] = lucas_kanade(X[i_video][i_frame], X[i_video][i_frame + 1])
