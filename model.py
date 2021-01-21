@@ -69,14 +69,14 @@ class ASLRecognizerModel(nn.Module):
         # feature extraction from RGB image
         feature_vectors_rgb = torch.zeros(size=(X.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
         for i, X_i in enumerate(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                     std=[0.229, 0.224, 0.225])(X)):
+                                                     std=[0.229, 0.224, 0.225])(X).to(self.device)):
             feature_vectors_rgb[i] = self.features_extractor_rgb(X_i)
 
         # feature extraction from optical flows
         X_lk = self.get_optical_flow(X)
-        feature_vectors_lk = torch.zeros(size=(X.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
+        feature_vectors_lk = torch.zeros(size=(X_lk.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
         for i, X_i in enumerate(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                     std=[0.229, 0.224, 0.225])(X_lk)):
+                                                     std=[0.229, 0.224, 0.225])(X_lk).to(self.device)):
             feature_vectors_lk[i, 1:] = self.features_extractor_lk(X_i)
 
         # concatenates the two embeddings
@@ -107,9 +107,10 @@ class ASLRecognizerModel(nn.Module):
             mask[..., 0] = angle * 180 / np.pi / 2
             mask[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
             # Converts HSV to RGB (BGR) color representation
-            rgb = torch.from_numpy(cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)) \
-                      .to(self.device).permute(2, 0, 1) / 255
-            return rgb
+            rgb = cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)
+            rgb[np.isnan(rgb)] = 0
+            optical_flow = torch.as_tensor(rgb).to(self.device).permute(2, 0, 1) / 255
+            return optical_flow
 
         X_lk = torch.zeros(size=(X.shape[0], X.shape[1] - 1, *X.shape[2:])).to(self.device)
         for i_video, video in enumerate(X):
@@ -195,7 +196,7 @@ def train_model(model: nn.Module,
 
                 # forward pass
                 with torch.set_grad_enabled(phase == 'train'):
-                    y_pred = model(X=X)
+                    y_pred = model(X)
                     loss = loss_function(y_pred, y)
 
                     # backward pass

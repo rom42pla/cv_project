@@ -1,4 +1,5 @@
 import re
+import random
 from os import listdir
 from os.path import splitext, split, exists, isdir, join
 from typing import Optional, Iterable
@@ -39,10 +40,11 @@ class VideoDataset(Dataset):
         return labels
 
 
-def load_dataset(samples_path: str, frames_per_video: int = None):
+def load_dataset(samples_path: str, frames_per_video: int = None, percentage: float = None):
     assert isinstance(samples_path, str)
     assert exists(samples_path) and isdir(samples_path)
     assert isinstance(frames_per_video, int) and frames_per_video >= 1
+    assert not percentage or (isinstance(percentage, float) or isinstance(percentage, int) and 0 < percentage <= 1)
     videos_paths = []
     for take in listdir(samples_path):
         if isdir(join(samples_path, take)):
@@ -51,6 +53,7 @@ def load_dataset(samples_path: str, frames_per_video: int = None):
                 if not re.fullmatch(pattern=r"([a-z]|[A-Z])\.mp4", string=sample_name):
                     continue
                 videos_paths += [join(samples_path, take, sample_name)]
-
+    if percentage:
+        videos_paths = videos_paths[:int(len(videos_paths) * percentage)]
     dataset = VideoDataset(videos_paths=videos_paths, frames_per_video=frames_per_video)
     return dataset
