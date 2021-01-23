@@ -33,10 +33,3 @@ asl_recognizer = ASLRecognizer(camera=camera, assets_path=assets_path,
 camera.start()
 asl_recognizer.start()
 print(f"Press ESC to quit")
-
-# time.sleep(args.sleep_time)
-
-# asl_recognizer.stop()
-# camera.stop()
-
-# c.plot_last_frames()

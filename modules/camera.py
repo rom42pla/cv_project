@@ -152,11 +152,11 @@ class Camera:
         if frames_per_video:
             video = video[np.linspace(start=0, stop=video.shape[0], num=frames_per_video, endpoint=False, dtype=int)]
         # preprocess the video
-        new_video = torch.zeros(size=(video.shape[0], video.shape[1], 224, 224))
+        new_video = torch.zeros(size=(video.shape[0], video.shape[1], 112, 112))
         for i_frame, frame in enumerate(video):
             transformations = transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.Resize(size=224),
+                transforms.Resize(size=112),
                 transforms.ToTensor()
             ])
             new_video[i_frame] = transformations(frame)

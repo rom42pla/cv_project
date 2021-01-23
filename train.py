@@ -36,30 +36,31 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Parameters for Alphabet Sign Recognition training')
     parser.add_argument("-osl", "--only_static_letters", dest='only_static_letters', action='store_true',
                         help='Whether to delete videos labeled with \'j\' and \'z\'')
+    parser.add_argument("-da", "--data_augmentation", dest='data_augmentation', action='store_false',
+                        help='Whether to not use data augmentation techniques')
+    parser.add_argument("-e", "--epochs", dest='epochs', type=int, default=50,
+                        help='Number of epochs for training')
+    parser.add_argument("-bs", "--batch_size", dest='batch_size', type=int, default=1,
+                        help='Number of videos per batch')
+    parser.add_argument("-npr", "--not_pretrained_resnet", dest='not_pretrained_resnet', action='store_true',
+                        help='Whether to use pretrained ResNet')
     args = parser.parse_args()
-
+    assert isinstance(args.epochs, int) and args.epochs >= 1
+    assert isinstance(args.batch_size, int) and args.batch_size >= 1
+    assert isinstance(args.not_pretrained_resnet, bool)
     # retrieves the parameters from a file
     # or creates it
     overwrite_parameters = True
     if not isfile(parameters_path) or overwrite_parameters:
         parameters = {
-            "transformations": {
-                "resize_size": 256,
-                "random_crop_size": 224,
-                "random_horizontal_flip_probability": 0.5,
-                "random_vertical_flip_probability": 0.01,
-                "random_rotation_degrees": 15
-            },
             "training": {
                 "only_static_letters": args.only_static_letters,
-                "frames_per_video": 12,
-                "epochs": 10,
+                "data_augmentation": args.data_augmentation,
+                "frames_per_video": 16,
+                "epochs": args.epochs,
                 "learning_rate": 1e-4,
                 "batch_size": 1,
-                "lstm_num_layers": 1,
-                "lstm_bidirectional": False,
-                "lstm_hidden_size": 512,
-                "lstm_dropout": 0,
+                "pretrained_resnet": not args.not_pretrained_resnet
             }
         }
         save_json(content=parameters, filepath=parameters_path)
@@ -95,10 +96,11 @@ if __name__ == '__main__':
     #                            lstm_hidden_size=parameters["training"]["lstm_hidden_size"],
     #                            lstm_dropout=parameters["training"]["lstm_dropout"])
 
-    model = ASLRecognizerModelFigo(n_classes=len(vocab), frames_per_video=parameters["training"]["frames_per_video"],
-                                   lstm_hidden_size=parameters["training"]["lstm_hidden_size"])
+    model = ASLRecognizerModelFigo(n_classes=len(vocab),
+                                   frames_per_video=parameters["training"]["frames_per_video"],
+                                   pretrained=parameters["training"]["pretrained_resnet"])
 
     train_model(model=model, filepath=join(model_path, "ASLRecognizer_weights.pth"),
                 epochs=parameters["training"]["epochs"], lr=parameters["training"]["learning_rate"],
-                data_augmentation=True,
+                data_augmentation=parameters["training"]["data_augmentation"],
                 train_dataloader=dl_train, val_dataloader=dl_val)

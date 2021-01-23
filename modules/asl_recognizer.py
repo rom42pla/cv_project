@@ -11,7 +11,7 @@ import torch
 from .camera import Camera
 
 from modules.utils import read_json
-from model import ASLRecognizerModel
+from model import ASLRecognizerModel, ASLRecognizerModelFigo
 
 
 class ASLRecognizer:
@@ -31,13 +31,9 @@ class ASLRecognizer:
         self.parameters = read_json(filepath=join(self.model_path, "parameters.json"))
         self.vocab = utils.read_json(join(self.model_path, "vocab.json"))
         self.vocab_reversed = {v: k for k, v in self.vocab.items()}
-        self.model = ASLRecognizerModel(n_classes=len(self.vocab),
-                                        frames_per_video=self.parameters["training"]["frames_per_video"],
-                                        lstm_num_layers=self.parameters["training"]["lstm_num_layers"],
-                                        lstm_bidirectional=self.parameters["training"]["lstm_bidirectional"],
-                                        lstm_hidden_size=self.parameters["training"]["lstm_hidden_size"],
-                                        lstm_dropout=self.parameters["training"]["lstm_dropout"])
-        self.model.load_state_dict(torch.load(join(self.model_path, "ASLRecognizer_weights.pth")))
+        self.model = ASLRecognizerModelFigo(n_classes=len(self.vocab),
+                                            frames_per_video=self.parameters["training"]["frames_per_video"],
+                                            weights_path=join(self.model_path, "ASLRecognizer_weights.pth"))
         self.model.eval()
 
         # setups the thread
