@@ -161,6 +161,4 @@ class Camera:
             ])
             new_video[i_frame] = transformations(frame)
         video = new_video
-        from modules.utils import show_img
-        show_img(video)
         return video

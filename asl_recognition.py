@@ -9,7 +9,6 @@ samples_path, letters_path = join(assets_path, "samples"), join(assets_path, "le
 
 # parses the arguments from the console
 parser = argparse.ArgumentParser(description='Parameters for Alphabet Sign Recognition')
-
 parser.add_argument("-c", "--cam_number", type=int, default=0,
                     help='Number of the cam in use')
 parser.add_argument("-pd", "--predictions_delta", type=float, default=2,

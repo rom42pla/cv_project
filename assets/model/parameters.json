@@ -7,6 +7,7 @@
         "random_rotation_degrees": 15
     },
     "training": {
+        "only_static_letters": true,
         "frames_per_video": 12,
         "epochs": 10,
         "learning_rate": 0.0001,

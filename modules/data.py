@@ -40,20 +40,22 @@ class VideoDataset(Dataset):
         return labels
 
 
-def load_dataset(samples_path: str, frames_per_video: int = None, percentage: float = None):
+def load_dataset(samples_path: str, frames_per_video: int = None, only_static_letters: bool = False):
     assert isinstance(samples_path, str)
     assert exists(samples_path) and isdir(samples_path)
     assert isinstance(frames_per_video, int) and frames_per_video >= 1
-    assert not percentage or (isinstance(percentage, float) or isinstance(percentage, int) and 0 < percentage <= 1)
+    assert isinstance(only_static_letters, bool)
     videos_paths = []
     for take in listdir(samples_path):
         if isdir(join(samples_path, take)):
-            for sample_name in listdir(join(samples_path, take)):
+            for video_name in listdir(join(samples_path, take)):
                 # ignores non-videos
-                if not re.fullmatch(pattern=r"([a-z]|[A-Z])\.mp4", string=sample_name):
+                if not re.fullmatch(pattern=r"([a-z]|[A-Z])\.mp4", string=video_name):
                     continue
-                videos_paths += [join(samples_path, take, sample_name)]
-    if percentage:
-        videos_paths = videos_paths[:int(len(videos_paths) * percentage)]
+                # eventually ignores moving letters
+                label = splitext(video_name)[0]
+                if only_static_letters and label in {"j", "z"}:
+                    continue
+                videos_paths += [join(samples_path, take, video_name)]
     dataset = VideoDataset(videos_paths=videos_paths, frames_per_video=frames_per_video)
     return dataset
