@@ -95,31 +95,81 @@ class ASLRecognizerModel(nn.Module):
 
         return predictions
 
-    def get_optical_flow(self, X):
-        def lucas_kanade(frame1, frame2):
-            frame1, frame2 = (cv2.cvtColor(frame1.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8), \
-                             (cv2.cvtColor(frame2.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8)
-            optical_flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            optical_flow[np.isnan(optical_flow)] = 0
-            optical_flow = np.clip(optical_flow, 0, 1)
-            optical_flow = torch.as_tensor(optical_flow).to(self.device).permute(2, 0, 1)
 
-            # mask = np.zeros((*frame1.shape, 3))
-            # mask[..., 1] = 255
-            # magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-            # mask[..., 0] = angle * 180 / np.pi / 2
-            # mask[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
-            # # Converts HSV to RGB (BGR) color representation
-            # rgb = cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)
-            # rgb[np.isnan(rgb)] = 0
-            # optical_flow = torch.as_tensor(rgb).to(self.device).permute(2, 0, 1) / 255
-            return optical_flow
+class ASLRecognizerModelFigo(nn.Module):
+    def __init__(self, n_classes: int, frames_per_video: int,
+                 lstm_hidden_size: int = 300,
+                 device: str = "auto"):
+        # checks that the device is correctly given
+        assert device in {"cpu", "cuda", "auto"}
+        self.device = device if device in {"cpu", "cuda"} else "cuda" if torch.cuda.is_available() else "cpu"
 
-        X_lk = torch.zeros(size=(X.shape[0], X.shape[1] - 1, 2, *X.shape[3:])).to(self.device)
-        for i_video, video in enumerate(X):
-            for i_frame in range(X_lk.shape[1]):
-                X_lk[i_video][i_frame] = lucas_kanade(X[i_video][i_frame], X[i_video][i_frame + 1])
-        return X_lk
+        super(ASLRecognizerModelFigo, self).__init__()
+
+        assert isinstance(n_classes, int) and n_classes >= 2
+        self.n_classes = n_classes
+
+        # gets the feature extractor from a pretrained CNN
+        resnet = models.video.r2plus1d_18(pretrained=False)
+        self.img_embeddings_size = list(resnet.children())[-1].weight.shape[-1]
+        self.layers = nn.Sequential(
+            *list(resnet.children())[:-1],
+            nn.Flatten(),
+            nn.Linear(in_features=self.img_embeddings_size,
+                      out_features=self.n_classes)
+        )
+
+        self.to(self.device)
+
+    def forward(self, X: torch.FloatTensor):
+        in_dim = len(X.shape)
+        # reshapes the input
+        X = X.permute(0, 2, 1, 3, 4)
+        if in_dim == 4:
+            X = X.unsqueeze(0).to(self.device)
+
+        predictions = self.layers(X)
+
+        # softmax is automatically applied by the CrossEntropy loss during training
+        if not self.training:
+            predictions = F.softmax(predictions, dim=-1)
+
+        if in_dim == 4:
+            predictions = predictions.squeeze().to(self.device)
+
+        return predictions
+
+
+def get_optical_flow(self, X):
+    # retrieves the device where X is stored
+    original_device = "cuda" if X.is_cuda else "cpu"
+
+    def lucas_kanade(frame1, frame2):
+        frame1, frame2 = (cv2.cvtColor(frame1.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY) * 255).astype(
+            np.uint8), \
+                         (cv2.cvtColor(frame2.permute(1, 2, 0).cpu().numpy(), cv2.COLOR_RGB2GRAY) * 255).astype(
+                             np.uint8)
+        optical_flow = cv2.calcOpticalFlowFarneback(frame1, frame2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        optical_flow[np.isnan(optical_flow)] = 0
+        optical_flow = np.clip(optical_flow, 0, 1)
+        optical_flow = torch.as_tensor(optical_flow).to(original_device).permute(2, 0, 1)
+
+        # mask = np.zeros((*frame1.shape, 3))
+        # mask[..., 1] = 255
+        # magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+        # mask[..., 0] = angle * 180 / np.pi / 2
+        # mask[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
+        # # Converts HSV to RGB (BGR) color representation
+        # rgb = cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)
+        # rgb[np.isnan(rgb)] = 0
+        # optical_flow = torch.as_tensor(rgb).to(self.device).permute(2, 0, 1) / 255
+        return optical_flow
+
+    X_lk = torch.zeros(size=(X.shape[0], X.shape[1] - 1, 2, *X.shape[3:])).to(original_device)
+    for i_video, video in enumerate(X):
+        for i_frame in range(X_lk.shape[1]):
+            X_lk[i_video][i_frame] = lucas_kanade(X[i_video][i_frame], X[i_video][i_frame + 1])
+    return X_lk
 
 
 def train_model(model: nn.Module,
@@ -142,13 +192,15 @@ def train_model(model: nn.Module,
     best_epoch_f1, best_model_weights = 0, \
                                         deepcopy(model.state_dict())
 
+    # loss_function, optimizer = nn.CrossEntropyLoss(), \
+    #                            torch.optim.Adam([
+    #                                {"params": model.features_extractor_rgb.parameters(), "lr": 1e-5},
+    #                                {"params": model.features_extractor_lk.parameters()},
+    #                                {"params": model.lstm.parameters()},
+    #                                {"params": model.classification.parameters()}
+    #                            ], lr=lr)
     loss_function, optimizer = nn.CrossEntropyLoss(), \
-                               torch.optim.Adam([
-                                   {"params": model.features_extractor_rgb.parameters(), "lr": 1e-5},
-                                   {"params": model.features_extractor_lk.parameters()},
-                                   {"params": model.lstm.parameters()},
-                                   {"params": model.classification.parameters()}
-                               ], lr=lr)
+                               torch.optim.Adam(model.parameters(), lr=lr)
 
     stats = pd.DataFrame()
     for epoch in range(epochs):

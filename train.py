@@ -18,7 +18,7 @@ import torchvision.transforms as transforms
 
 torch.manual_seed(0)
 
-from model import ASLRecognizerModel, train_model
+from model import ASLRecognizerModel, train_model, ASLRecognizerModelFigo
 from modules.utils import read_json, save_json, show_img, build_vocab
 
 if __name__ == '__main__':
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                 "frames_per_video": 12,
                 "epochs": 10,
                 "learning_rate": 1e-4,
-                "batch_size": 3,
+                "batch_size": 1,
                 "lstm_num_layers": 1,
                 "lstm_bidirectional": False,
                 "lstm_hidden_size": 512,
@@ -89,11 +89,14 @@ if __name__ == '__main__':
                        DataLoader(ds_val, batch_size=parameters["training"]["batch_size"], shuffle=False,
                                   pin_memory=True, num_workers=parameters["training"]["batch_size"])
 
-    model = ASLRecognizerModel(n_classes=len(vocab), frames_per_video=parameters["training"]["frames_per_video"],
-                               lstm_num_layers=parameters["training"]["lstm_num_layers"],
-                               lstm_bidirectional=parameters["training"]["lstm_bidirectional"],
-                               lstm_hidden_size=parameters["training"]["lstm_hidden_size"],
-                               lstm_dropout=parameters["training"]["lstm_dropout"])
+    # model = ASLRecognizerModel(n_classes=len(vocab), frames_per_video=parameters["training"]["frames_per_video"],
+    #                            lstm_num_layers=parameters["training"]["lstm_num_layers"],
+    #                            lstm_bidirectional=parameters["training"]["lstm_bidirectional"],
+    #                            lstm_hidden_size=parameters["training"]["lstm_hidden_size"],
+    #                            lstm_dropout=parameters["training"]["lstm_dropout"])
+
+    model = ASLRecognizerModelFigo(n_classes=len(vocab), frames_per_video=parameters["training"]["frames_per_video"],
+                                   lstm_hidden_size=parameters["training"]["lstm_hidden_size"])
 
     train_model(model=model, filepath=join(model_path, "ASLRecognizer_weights.pth"),
                 epochs=parameters["training"]["epochs"], lr=parameters["training"]["learning_rate"],
