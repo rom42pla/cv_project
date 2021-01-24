@@ -1,11 +1,10 @@
-# computation
-numpy
-
-# computer vision
-opencv-python
-av
-
 # machine learning
 torch
 torchvision
 pytorch-lightning
+
+# misc
+numpy
+pandas
+opencv-python
+av

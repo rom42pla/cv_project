@@ -102,8 +102,8 @@ if __name__ == '__main__':
     # defines the model
     model = ASLRecognizerModel(n_classes=len(vocab),
                                pretrained_resnet=parameters["training"]["pretrained_resnet"],
-                               lr_classification=parameters["training"]["lr_classification"],
                                lr_features_extractor=parameters["training"]["lr_features_extractor"],
+                               lr_classification=parameters["training"]["lr_classification"],
                                training_checkpoint_path=training_checkpoint_path,
                                device=device)
 
