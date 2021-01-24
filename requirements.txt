@@ -1,5 +1,11 @@
+# computation
 numpy
+
+# computer vision
 opencv-python
+av
+
+# machine learning
 torch
 torchvision
-av
+pytorch-lightning

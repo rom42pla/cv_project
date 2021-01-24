@@ -4,8 +4,10 @@
         "data_augmentation": true,
         "frames_per_video": 16,
         "epochs": 50,
-        "learning_rate": 0.0001,
-        "batch_size": 1,
+        "lr_features_extractor": 1e-05,
+        "lr_classification": 0.001,
+        "batch_size": 4,
+        "num_workers": 2,
         "pretrained_resnet": true
     }
 }

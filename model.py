@@ -1,5 +1,3 @@
-import time
-from copy import deepcopy
 from os.path import exists, join
 
 import numpy as np
@@ -10,267 +8,169 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 import torchvision.transforms as transforms
-from sklearn.metrics import f1_score, accuracy_score
-from torch.utils.data import DataLoader
-from tqdm import tqdm
+from sklearn.metrics import f1_score
 
-from modules.utils import show_img, plot_losses, resize_videos
+import pytorch_lightning as pl
+
+from modules.utils import show_img, resize_videos, validation_data_augmentation, training_data_augmentation
 
 
-class ASLRecognizerModel(nn.Module):
-    def __init__(self, n_classes: int, frames_per_video: int,
-                 lstm_num_layers: int = 100,
-                 lstm_bidirectional: bool = False,
-                 lstm_dropout: float = 0,
-                 lstm_hidden_size: int = 300,
-                 device: str = "auto"):
+class ASLRecognizerModel(pl.LightningModule):
+    def __init__(self, n_classes: int,
+                 pretrained_resnet: bool = True,
+                 lr_features_extractor: float = 1e-5, lr_classification: float = 1e-4,
+                 training_checkpoint_path: str = None, device: str = "auto"):
         # checks that the device is correctly given
         assert device in {"cpu", "cuda", "auto"}
-        self.device = device if device in {"cpu", "cuda"} else "cuda" if torch.cuda.is_available() else "cpu"
+        self.device_str = device if device in {"cpu", "cuda"} else "cuda" if torch.cuda.is_available() else "cpu"
 
         super(ASLRecognizerModel, self).__init__()
 
-        # gets the feature extractor from a pretrained CNN
-        resnet_rgb = models.resnet34(pretrained=True)
-        self.img_embeddings_size = list(resnet_rgb.children())[-1].weight.shape[-1]
-        self.features_extractor_rgb = nn.Sequential(
-            *list(resnet_rgb.children())[:-1],
-            nn.Flatten()
-        )
-
-        # feature extractor for optical flow
-        resnet_lk = models.resnet34(pretrained=False)
-        resnet_lk.conv1 = nn.Conv2d(2, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-        self.features_extractor_lk = nn.Sequential(
-            *list(resnet_lk.children())[:-1],
-            nn.Flatten()
-        )
-
-        # lstm
-        assert isinstance(n_classes, int) and n_classes >= 2
-        self.n_classes = n_classes
-        assert isinstance(frames_per_video, int) and frames_per_video >= 1
-        assert isinstance(lstm_num_layers, int) and lstm_num_layers >= 1
-        assert isinstance(lstm_bidirectional, bool)
-        assert isinstance(lstm_hidden_size, int) and lstm_hidden_size >= 1
-        assert not lstm_dropout or (isinstance(lstm_dropout, float) and 0 < lstm_dropout < 1)
-        self.lstm = nn.LSTM(input_size=self.img_embeddings_size,
-                            hidden_size=lstm_hidden_size, num_layers=lstm_num_layers, bidirectional=lstm_bidirectional,
-                            dropout=lstm_dropout if lstm_dropout else 0, batch_first=True)
-
-        self.classification = nn.Linear(in_features=lstm_hidden_size,
-                                        out_features=self.n_classes)
-        self.to(self.device)
-
-    def forward(self, X):
-        in_dim = len(X.shape)
-        if in_dim == 4:
-            X = X.unsqueeze(0).to(self.device)
-
-        # feature extraction from RGB image
-        feature_vectors_rgb = torch.zeros(size=(X.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
-        for i, X_i in enumerate(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                     std=[0.229, 0.224, 0.225])(X).to(self.device)):
-            feature_vectors_rgb[i] = self.features_extractor_rgb(X_i)
-
-        # # feature extraction from optical flows
-        # X_lk = self.get_optical_flow(X)
-        # feature_vectors_lk = torch.zeros(size=(X_lk.shape[0], X.shape[1], self.img_embeddings_size)).to(self.device)
-        # for i, X_i in enumerate(X_lk):
-        #     feature_vectors_lk[i, 1:] = self.features_extractor_lk(X_i)
-        #
-        # # concatenates the two embeddings
-        # feature_vectors = torch.cat([feature_vectors_rgb, feature_vectors_lk], dim=-1).to(self.device)
-        feature_vectors = feature_vectors_rgb.to(self.device)
-        # final prediction
-        predictions = self.lstm(feature_vectors)[0][:, -1, :]
-        predictions = self.classification(predictions)
-
-        # softmax is automatically applied by the CrossEntropy loss during training
-        if not self.training:
-            predictions = F.softmax(predictions, dim=-1)
-
-        if in_dim == 4:
-            predictions = predictions.squeeze().to(self.device)
-
-        return predictions
-
-
-class ASLRecognizerModelFigo(nn.Module):
-    def __init__(self, n_classes: int, frames_per_video: int,
-                 weights_path: str = None, pretrained: bool = True,
-                 device: str = "auto"):
-        # checks that the device is correctly given
-        assert device in {"cpu", "cuda", "auto"}
-        self.device = device if device in {"cpu", "cuda"} else "cuda" if torch.cuda.is_available() else "cpu"
-
-        super(ASLRecognizerModelFigo, self).__init__()
-
         assert isinstance(n_classes, int) and n_classes >= 2
         self.n_classes = n_classes
 
         # gets the feature extractor from a pretrained CNN
-        assert not weights_path or (isinstance(weights_path, str) and exists(weights_path))
-        resnet = models.video.r2plus1d_18(pretrained=True if not weights_path and pretrained else False)
+        resnet = models.video.r2plus1d_18(pretrained=pretrained_resnet)
         self.img_embeddings_size = list(resnet.children())[-1].weight.shape[-1]
-        self.layers = nn.Sequential(
+        self.features_extractor = nn.Sequential(
             *list(resnet.children())[:-1],
             nn.Flatten(),
+        )
+        self.classification = nn.Sequential(
             nn.Linear(in_features=self.img_embeddings_size,
                       out_features=self.n_classes)
         )
-        if weights_path:
-            self.load_state_dict(torch.load(join(weights_path)))
 
-        self.to(self.device)
+        # weights path
+        assert not training_checkpoint_path or isinstance(training_checkpoint_path, str)
+        self.training_checkpoint_path = training_checkpoint_path
+
+        # learning rates
+        self.lr_features_extractor, self.lr_classification_layer = lr_features_extractor, lr_classification
+
+        # stats
+        self._last_train_epoch_stats, self._last_val_epoch_stats = [], []
+        self.training_stats = pd.DataFrame(columns=["train_loss", "val_loss", "train_f1", "val_f1"])
+        self.to(self.device_str)
 
     def forward(self, X: torch.FloatTensor):
         in_dim = len(X.shape)
         if in_dim == 4:
-            X = X.unsqueeze(0).to(self.device)
+            X = X.unsqueeze(0).to(self.device_str)
         # eventually resizes the videos
         if X.shape[-2] != 112 or X.shape[-1] != 112:
             X = resize_videos(X, 112)
         # normalizes the input for ResNet
         X = transforms.Normalize(mean=[0.43216, 0.394666, 0.37645],
-                                 std=[0.22803, 0.22145, 0.216989])(X).permute(0, 2, 1, 3, 4).to(self.device)
+                                 std=[0.22803, 0.22145, 0.216989])(X).permute(0, 2, 1, 3, 4)
         # predicts the labels
-        predictions = self.layers(X)
+        features = self.features_extractor(X)
+        predictions = self.classification(features)
 
         # softmax is automatically applied by the CrossEntropy loss during training
         if not self.training:
             predictions = F.softmax(predictions, dim=-1)
 
         if in_dim == 4:
-            predictions = predictions.squeeze().to(self.device)
+            predictions = predictions.squeeze().to(self.device_str)
 
         return predictions
 
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam([
+            {"params": self.features_extractor.parameters(), "lr": self.lr_features_extractor},
+            {"params": self.classification.parameters(), "lr": self.lr_classification_layer},
+        ], lr=1e-4)
+        return optimizer
 
-def train_model(model: nn.Module,
-                train_dataloader: DataLoader, val_dataloader: DataLoader,
-                lr: float = 1e-3, epochs=5,
-                data_augmentation=True,
-                filepath: str = None, verbose: bool = True):
-    # checks about model's parameters
-    assert isinstance(model, nn.Module)
-    assert isinstance(train_dataloader, DataLoader)
-    assert isinstance(val_dataloader, DataLoader)
-    if filepath:
-        assert isinstance(filepath, str)
-    # checks on other parameters
-    assert isinstance(verbose, bool)
-    assert isinstance(lr, float) and lr > 0
-    assert isinstance(epochs, int) and epochs >= 1
+    def training_step(self, batch, batch_idx):
+        # sets the model in training mode
+        self.train()
+        # retrieves X and y from the batch
+        X, y = batch[0], batch[1]
+        # applies data augmentation
+        X = training_data_augmentation(X)
+        # predicts the labels
+        y_pred = self.forward(X)
+        # updates the stats
+        loss = F.cross_entropy(y_pred, y)
+        self._last_train_epoch_stats += [
+            {
+                "loss": loss,
+                "y": y,
+                "y_pred": torch.argmax(y_pred, dim=-1)
+            }
+        ]
+        return loss
 
-    since = time.time()
-    best_epoch_f1, best_model_weights = 0, \
-                                        deepcopy(model.state_dict())
+    def validation_step(self, batch, batch_idx):
+        # sets the model in eval mode
+        self.eval()
+        # retrieves X and y from the batch
+        X, y = batch[0], batch[1]
+        # applies data augmentation
+        X = validation_data_augmentation(X)
+        # predicts the labels
+        y_pred = self.forward(X)
+        # updates the stats
+        loss = F.cross_entropy(y_pred, y)
+        self._last_val_epoch_stats += [
+            {
+                "loss": loss,
+                "y": y,
+                "y_pred": torch.argmax(y_pred, dim=-1)
+            }
+        ]
 
-    # loss_function, optimizer = nn.CrossEntropyLoss(), \
-    #                            torch.optim.Adam([
-    #                                {"params": model.features_extractor_rgb.parameters(), "lr": 1e-5},
-    #                                {"params": model.features_extractor_lk.parameters()},
-    #                                {"params": model.lstm.parameters()},
-    #                                {"params": model.classification.parameters()}
-    #                            ], lr=lr)
-    loss_function, optimizer = nn.CrossEntropyLoss(), \
-                               torch.optim.Adam(model.parameters(), lr=lr)
+    def on_epoch_end(self):
+        if self._last_train_epoch_stats == [] or self._last_val_epoch_stats == []:
+            return
+        train_loss, val_loss = np.mean([batch_output["loss"].item() for batch_output in self._last_train_epoch_stats]), \
+                               np.mean([batch_output["loss"].item() for batch_output in self._last_val_epoch_stats])
+        train_y, train_y_pred = [value.item() for batch_output in self._last_train_epoch_stats
+                                 for value in batch_output["y"]], \
+                                [value.item() for batch_output in self._last_train_epoch_stats
+                                 for value in batch_output["y_pred"]]
+        val_y, val_y_pred = [value.item() for batch_output in self._last_val_epoch_stats
+                             for value in batch_output["y"]], \
+                            [value.item() for batch_output in self._last_val_epoch_stats
+                             for value in batch_output["y_pred"]]
+        train_f1, val_f1 = f1_score(train_y, train_y_pred, average="macro"), \
+                           f1_score(val_y, val_y_pred, average="macro")
+        # eventually saves the model
+        if not self.training_stats.empty:
+            best_val_f1 = np.max(self.training_stats["val_f1"])
+            if val_f1 > best_val_f1:
+                if self.training_checkpoint_path:
+                    self.save_weights(self.training_checkpoint_path)
+                    print(f"Found best model with F1 = {np.round(val_f1, 4)} (+{np.round(val_f1 - best_val_f1, 4)}) "
+                          f"and saved to {self.training_checkpoint_path}")
+                else:
+                    print(f"Found best model with F1 = {np.round(val_f1, 4)} (+{np.round(val_f1 - best_val_f1, 4)}) "
+                          f"but a filepath where to save the checkpoint is not given")
+        # updates stats
+        self.training_stats = self.training_stats.append({
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "train_f1": train_f1,
+            "val_f1": val_f1
+        }, ignore_index=True)
+        print("\n", self.training_stats)
+        self._last_train_epoch_stats, self._last_val_epoch_stats = [], []
 
-    stats = pd.DataFrame()
-    for epoch in range(epochs):
-        for phase in ['train', 'val']:
-            data = train_dataloader if phase == "train" else val_dataloader
-            if phase == 'train':
-                if verbose:
-                    print()
-                model.train()
-            else:
-                model.eval()
+    '''
+    W E I G H T S
+    M A N A G E M E N T
+    '''
 
-            epoch_losses, epoch_accuracies, epoch_f1 = np.zeros(shape=len(data)), \
-                                                       np.zeros(shape=len(data)), \
-                                                       np.zeros(shape=len(data))
-            for i_batch, batch in tqdm(enumerate(data), total=len(data),
-                                       desc=f"{phase.capitalize()} epoch {epoch + 1}/{epochs}"):
-                # gets input data
-                X, y = batch[0].to(model.device), batch[1].to(model.device)
+    def load_weights(self, weights_path):
+        assert isinstance(weights_path, str) and exists(weights_path)
+        self.cpu()
+        self.load_state_dict(torch.load(join(weights_path)))
+        self.to(self.device_str)
 
-                # data augmentation
-                if data_augmentation:
-                    X_new = torch.zeros(size=(*X.shape[:3],
-                                              112, 112)).to(model.device)
-                    horizontal_flip_p, vertical_flip_p = 1 if np.random.random() < 0.75 else 0, \
-                                                         1 if np.random.random() < 0.01 else 0
-                    rotation_degrees = np.random.randint(-15, 16)
-                    for i_video, video in enumerate(X):
-                        transformations_train = transforms.Compose([
-                            transforms.ToPILImage(),
-                            transforms.RandomHorizontalFlip(p=horizontal_flip_p),
-                            transforms.RandomVerticalFlip(p=vertical_flip_p),
-                            transforms.Resize(size=128),
-                            transforms.RandomRotation(degrees=(rotation_degrees, rotation_degrees)),
-                            transforms.RandomCrop(size=112),
-                            transforms.ToTensor()
-                        ])
-                        transformations_val = transforms.Compose([
-                            transforms.ToPILImage(),
-                            transforms.Resize(size=128),
-                            transforms.CenterCrop(size=112),
-                            transforms.ToTensor()
-                        ])
-                        transformations = transformations_train if phase == "train" else transformations_val
-                        for i_frame, frame in enumerate(video):
-                            X_new[i_video][i_frame] = transformations(frame)
-                    X = X_new
-                optimizer.zero_grad()
-
-                # forward pass
-                with torch.set_grad_enabled(phase == 'train'):
-                    y_pred = model(X)
-                    loss = loss_function(y_pred, y)
-
-                    # backward pass
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                    epoch_losses[i_batch] = loss
-                    epoch_f1[i_batch] = f1_score(y.cpu(), torch.argmax(y_pred, dim=-1).cpu(), average="macro")
-                    epoch_accuracies[i_batch] = accuracy_score(y.cpu(), torch.argmax(y_pred, dim=-1).cpu())
-            # print some stats
-            stats = stats.append(pd.DataFrame(
-                index=[len(stats)],
-                data={
-                    "epoch": epoch + 1,
-                    "phase": phase,
-                    "avg loss": np.mean(epoch_losses),
-                    "avg accuracy": np.mean(epoch_accuracies),
-                    "avg F1": np.mean(epoch_f1)
-                }))
-            if verbose and phase == "val":
-                print(f"\n", stats.to_string(index=False))
-                # if epoch > 1:
-                #     plot_losses(train_losses=stats.loc[(stats["phase"] == "train")]["avg loss"],
-                #                 val_losses=stats.loc[(stats["phase"] == "val")]["avg loss"])
-
-            # save the best model
-            avg_epoch_f1 = np.mean(epoch_f1)
-            if phase == 'val' and avg_epoch_f1 > best_epoch_f1:
-                best_epoch_f1, best_model_weights = avg_epoch_f1, \
-                                                    deepcopy(model.state_dict())
-                original_device = model.device
-                model = model.cpu()
-                torch.save(model.state_dict(), filepath)
-                model = model.to(original_device)
-                if verbose:
-                    print(f"Found best model with F1 {avg_epoch_f1} and saved to {filepath}")
-
-    if verbose:
-        time_elapsed = time.time() - since
-        print(f'Training completed in {int(time_elapsed // 60)}m {int(time_elapsed % 60)}s '
-              f'with a best F1 of {best_epoch_f1}')
-
-    # load best model weights
-    model.load_state_dict(best_model_weights)
-    return model, best_epoch_f1
+    def save_weights(self, weights_path):
+        assert isinstance(weights_path, str)
+        self.cpu()
+        torch.save(self.state_dict(), weights_path)
+        self.to(self.device_str)

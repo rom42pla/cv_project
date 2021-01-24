@@ -11,7 +11,7 @@ import torch
 from .camera import Camera
 
 from modules.utils import read_json
-from model import ASLRecognizerModel, ASLRecognizerModelFigo
+from model import ASLRecognizerModel, ASLRecognizerModel
 
 
 class ASLRecognizer:
@@ -25,15 +25,20 @@ class ASLRecognizer:
         self.camera = camera
         self.camera.asl_recognizer = self
 
-        # loads the model
+        # paths
         assert isinstance(assets_path, str)
-        self.model_path = join(assets_path, "model")
-        self.parameters = read_json(filepath=join(self.model_path, "parameters.json"))
-        self.vocab = utils.read_json(join(self.model_path, "vocab.json"))
+        model_path = join(assets_path, "model")
+        parameters_path, vocab_path, model_weights_path = join(model_path, "parameters.json"), \
+                                                          join(model_path, "vocab.json"), \
+                                                          join(model_path, "ASLRecognizer_weights.pth")
+        # parameters
+        self.parameters, self.vocab = read_json(filepath=parameters_path), \
+                                      read_json(filepath=vocab_path)
         self.vocab_reversed = {v: k for k, v in self.vocab.items()}
-        self.model = ASLRecognizerModelFigo(n_classes=len(self.vocab),
-                                            frames_per_video=self.parameters["training"]["frames_per_video"],
-                                            weights_path=join(self.model_path, "ASLRecognizer_weights.pth"))
+        # defines the model
+        self.model = ASLRecognizerModel(n_classes=len(self.vocab),
+                                        pretrained_resnet=False)
+        self.model.load_weights(weights_path=model_weights_path)
         self.model.eval()
 
         # setups the thread
@@ -69,7 +74,7 @@ class ASLRecognizer:
         self.is_running = False
 
     def predict_letter(self, X):
-        X = X.to(self.model.device)
+        X = X.to(self.model.device_str)
         with torch.no_grad():
             prediction = self.model(X)
         prediction = torch.argmax(prediction, dim=-1).item()

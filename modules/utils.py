@@ -69,6 +69,7 @@ def resize_videos(X, size):
         X_new = X_new.squeeze(0).to(original_device)
     return X_new.to(original_device)
 
+
 def get_optical_flow(X):
     # retrieves the device where X is stored
     original_device = "cuda" if X.is_cuda else "cpu"
@@ -100,6 +101,7 @@ def get_optical_flow(X):
             X_lk[i_video][i_frame] = lucas_kanade(X[i_video][i_frame], X[i_video][i_frame + 1])
     return X_lk
 
+
 def plot_losses(train_losses, val_losses, title: str = None):
     # plots the loss chart
     sns.lineplot(y=train_losses, x=range(1, len(train_losses) + 1))
@@ -110,3 +112,41 @@ def plot_losses(train_losses, val_losses, title: str = None):
     plt.legend(['train', 'validation'], loc='upper right')
     plt.tight_layout()
     plt.show()
+
+
+def training_data_augmentation(X: torch.FloatTensor):
+    original_device = "cuda" if X.is_cuda else "cpu"
+    X_new = torch.zeros(size=(*X.shape[:3],
+                              112, 112), device=original_device)
+    horizontal_flip_p, vertical_flip_p = 1 if np.random.random() < 0.75 else 0, \
+                                         1 if np.random.random() < 0.01 else 0
+    rotation_degrees = np.random.randint(-15, 16)
+    for i_video, video in enumerate(X):
+        transformations = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=horizontal_flip_p),
+            transforms.RandomVerticalFlip(p=vertical_flip_p),
+            transforms.Resize(size=128),
+            transforms.RandomRotation(degrees=(rotation_degrees, rotation_degrees)),
+            transforms.RandomCrop(size=112),
+            transforms.ToTensor()
+        ])
+        for i_frame, frame in enumerate(video):
+            X_new[i_video][i_frame] = transformations(frame)
+    return X_new
+
+
+def validation_data_augmentation(X: torch.FloatTensor):
+    original_device = "cuda" if X.is_cuda else "cpu"
+    X_new = torch.zeros(size=(*X.shape[:3],
+                              112, 112), device=original_device)
+    for i_video, video in enumerate(X):
+        transformations = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize(size=128),
+            transforms.CenterCrop(size=112),
+            transforms.ToTensor()
+        ])
+        for i_frame, frame in enumerate(video):
+            X_new[i_video][i_frame] = transformations(frame)
+    return X_new

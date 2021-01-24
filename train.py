@@ -1,27 +1,24 @@
 import argparse
-import time
-from itertools import product
 from os.path import join, isfile
 from pprint import pprint
-from collections import Counter
 
 import numpy as np
 import pandas as pd
 
 from modules.data import load_dataset
 
-np.random.seed(0)
-
 import torch
 from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
+import pytorch_lightning as pl
 
-torch.manual_seed(0)
-
-from model import ASLRecognizerModel, train_model, ASLRecognizerModelFigo
+from model import ASLRecognizerModel
 from modules.utils import read_json, save_json, show_img, build_vocab
 
 if __name__ == '__main__':
+    # seeds for reproducibility
+    np.random.seed(0)
+    torch.manual_seed(0)
+
     # paths
     assets_path = join(".", "assets")
     samples_path = join(assets_path, "samples")
@@ -31,6 +28,8 @@ if __name__ == '__main__':
     model_path = join(assets_path, "model")
     parameters_path, vocab_path = join(model_path, "parameters.json"), \
                                   join(model_path, "vocab.json")
+    training_checkpoint_path = join(model_path, "ASLRecognizer_weights.pth")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # parses the arguments from the console
     parser = argparse.ArgumentParser(description='Parameters for Alphabet Sign Recognition training')
@@ -40,7 +39,7 @@ if __name__ == '__main__':
                         help='Whether to not use data augmentation techniques')
     parser.add_argument("-e", "--epochs", dest='epochs', type=int, default=50,
                         help='Number of epochs for training')
-    parser.add_argument("-bs", "--batch_size", dest='batch_size', type=int, default=1,
+    parser.add_argument("-bs", "--batch_size", dest='batch_size', type=int, default=4,
                         help='Number of videos per batch')
     parser.add_argument("-npr", "--not_pretrained_resnet", dest='not_pretrained_resnet', action='store_true',
                         help='Whether to use pretrained ResNet')
@@ -58,8 +57,10 @@ if __name__ == '__main__':
                 "data_augmentation": args.data_augmentation,
                 "frames_per_video": 16,
                 "epochs": args.epochs,
-                "learning_rate": 1e-4,
-                "batch_size": 1,
+                "lr_features_extractor": 1e-5,
+                "lr_classification": 1e-3,
+                "batch_size": args.batch_size,
+                "num_workers": 2,
                 "pretrained_resnet": not args.not_pretrained_resnet
             }
         }
@@ -85,22 +86,31 @@ if __name__ == '__main__':
     ds_train.vocab, ds_val.vocab = vocab, vocab
     print(f"Vocabulary: {', '.join(sorted(vocab.keys())).strip()}")
 
-    dl_train, dl_val = DataLoader(ds_train, batch_size=parameters["training"]["batch_size"], shuffle=True,
-                                  pin_memory=True, num_workers=parameters["training"]["batch_size"]), \
-                       DataLoader(ds_val, batch_size=parameters["training"]["batch_size"], shuffle=False,
-                                  pin_memory=True, num_workers=parameters["training"]["batch_size"])
-
     # model = ASLRecognizerModel(n_classes=len(vocab), frames_per_video=parameters["training"]["frames_per_video"],
     #                            lstm_num_layers=parameters["training"]["lstm_num_layers"],
     #                            lstm_bidirectional=parameters["training"]["lstm_bidirectional"],
     #                            lstm_hidden_size=parameters["training"]["lstm_hidden_size"],
     #                            lstm_dropout=parameters["training"]["lstm_dropout"])
 
-    model = ASLRecognizerModelFigo(n_classes=len(vocab),
-                                   frames_per_video=parameters["training"]["frames_per_video"],
-                                   pretrained=parameters["training"]["pretrained_resnet"])
+    train_dataloader, val_dataloader = DataLoader(ds_train, shuffle=True, pin_memory=True,
+                                                  batch_size=parameters["training"]["batch_size"],
+                                                  num_workers=parameters["training"]["num_workers"]), \
+                                       DataLoader(ds_val, shuffle=False, pin_memory=True,
+                                                  batch_size=parameters["training"]["batch_size"],
+                                                  num_workers=parameters["training"]["num_workers"])
 
-    train_model(model=model, filepath=join(model_path, "ASLRecognizer_weights.pth"),
-                epochs=parameters["training"]["epochs"], lr=parameters["training"]["learning_rate"],
-                data_augmentation=parameters["training"]["data_augmentation"],
-                train_dataloader=dl_train, val_dataloader=dl_val)
+    # defines the model
+    model = ASLRecognizerModel(n_classes=len(vocab),
+                               pretrained_resnet=parameters["training"]["pretrained_resnet"],
+                               lr_classification=parameters["training"]["lr_classification"],
+                               lr_features_extractor=parameters["training"]["lr_features_extractor"],
+                               training_checkpoint_path=training_checkpoint_path,
+                               device=device)
+
+    # starts the training
+    trainer = pl.Trainer(gpus=1 if model.device_str == "cuda" else 0,
+                         precision=16, accumulate_grad_batches=1,
+                         profiler=True,
+                         max_epochs=parameters["training"]["epochs"])
+    trainer.tune(model, train_dataloader, val_dataloader)
+    trainer.fit(model, train_dataloader, val_dataloader)
