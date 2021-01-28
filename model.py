@@ -12,14 +12,16 @@ from sklearn.metrics import f1_score
 
 import pytorch_lightning as pl
 
-from modules.utils import show_img, resize_videos, validation_data_augmentation, training_data_augmentation
+from modules.utils import show_img, resize_videos, validation_data_augmentation, training_data_augmentation, \
+    get_optical_flow
 
 
 class ASLRecognizerModel(pl.LightningModule):
     def __init__(self, n_classes: int,
                  pretrained_resnet: bool = True,
                  lr_features_extractor: float = 1e-5, lr_classification: float = 1e-4,
-                 training_checkpoint_path: str = None, device: str = "auto"):
+                 training_checkpoint_path: str = None, device: str = "auto",
+                 use_optical_flow: bool = False):
         # checks that the device is correctly given
         assert device in {"cpu", "cuda", "auto"}
         self.device_str = device if device in {"cpu", "cuda"} else "cuda" if torch.cuda.is_available() else "cpu"
@@ -31,6 +33,11 @@ class ASLRecognizerModel(pl.LightningModule):
 
         # gets the feature extractor from a pretrained CNN
         resnet = models.video.r2plus1d_18(pretrained=pretrained_resnet)
+        assert isinstance(use_optical_flow, bool)
+        self.use_optical_flow = use_optical_flow
+        # if using optical flow, input image will have 5 channels instead of 3
+        if self.use_optical_flow:
+            resnet.stem[0] = nn.Conv3d(5, 45, kernel_size=(1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
         self.img_embeddings_size = list(resnet.children())[-1].weight.shape[-1]
         self.features_extractor = nn.Sequential(
             *list(resnet.children())[:-1],
@@ -62,9 +69,18 @@ class ASLRecognizerModel(pl.LightningModule):
             X = resize_videos(X, 112)
         # normalizes the input for ResNet
         X = transforms.Normalize(mean=[0.43216, 0.394666, 0.37645],
-                                 std=[0.22803, 0.22145, 0.216989])(X).permute(0, 2, 1, 3, 4)
+                                 std=[0.22803, 0.22145, 0.216989])(X)
+
+        if self.use_optical_flow:
+            # optical flow
+            X_lk = torch.zeros((*X.shape[0:2], 2, *X.shape[3:]), device=self.device_str)
+            op_flow = get_optical_flow(X)
+            for i_batch in range(X_lk.shape[0]):
+                X_lk[i_batch, 1:] = op_flow[i_batch]
+            X = torch.cat((X, X_lk), dim=2)
+
         # predicts the labels
-        features = self.features_extractor(X)
+        features = self.features_extractor(X.permute(0, 2, 1, 3, 4))
         predictions = self.classification(features)
 
         # softmax is automatically applied by the CrossEntropy loss during training

@@ -43,6 +43,8 @@ if __name__ == '__main__':
                         help='Number of videos per batch')
     parser.add_argument("-npr", "--not_pretrained_resnet", dest='not_pretrained_resnet', action='store_true',
                         help='Whether to use pretrained ResNet')
+    parser.add_argument("-of", "--use_optical_flow", dest='use_optical_flow', action='store_true',
+                        help='Whether to use optical flow in predictions (using Lucas Kanade algorithm)')
     args = parser.parse_args()
     assert isinstance(args.epochs, int) and args.epochs >= 1
     assert isinstance(args.batch_size, int) and args.batch_size >= 1
@@ -61,7 +63,8 @@ if __name__ == '__main__':
                 "lr_classification": 1e-3,
                 "batch_size": args.batch_size,
                 "num_workers": 2,
-                "pretrained_resnet": not args.not_pretrained_resnet
+                "pretrained_resnet": not args.not_pretrained_resnet,
+                "use_optical_flow": args.use_optical_flow
             }
         }
         save_json(content=parameters, filepath=parameters_path)
@@ -86,12 +89,6 @@ if __name__ == '__main__':
     ds_train.vocab, ds_val.vocab = vocab, vocab
     print(f"Vocabulary: {', '.join(sorted(vocab.keys())).strip()}")
 
-    # model = ASLRecognizerModel(n_classes=len(vocab), frames_per_video=parameters["training"]["frames_per_video"],
-    #                            lstm_num_layers=parameters["training"]["lstm_num_layers"],
-    #                            lstm_bidirectional=parameters["training"]["lstm_bidirectional"],
-    #                            lstm_hidden_size=parameters["training"]["lstm_hidden_size"],
-    #                            lstm_dropout=parameters["training"]["lstm_dropout"])
-
     train_dataloader, val_dataloader = DataLoader(ds_train, shuffle=True, pin_memory=True,
                                                   batch_size=parameters["training"]["batch_size"],
                                                   num_workers=parameters["training"]["num_workers"]), \
@@ -101,9 +98,10 @@ if __name__ == '__main__':
 
     # defines the model
     model = ASLRecognizerModel(n_classes=len(vocab),
-                               pretrained_resnet=parameters["training"]["pretrained_resnet"],
                                lr_features_extractor=parameters["training"]["lr_features_extractor"],
                                lr_classification=parameters["training"]["lr_classification"],
+                               pretrained_resnet=parameters["training"]["pretrained_resnet"],
+                               use_optical_flow=parameters["training"]["use_optical_flow"],
                                training_checkpoint_path=training_checkpoint_path,
                                device=device)
 

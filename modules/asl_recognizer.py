@@ -35,7 +35,8 @@ class ASLRecognizer:
         self.vocab_reversed = {v: k for k, v in self.vocab.items()}
         # defines the model
         self.model = ASLRecognizerModel(n_classes=len(self.vocab),
-                                        pretrained_resnet=False)
+                                        pretrained_resnet=False,
+                                        use_optical_flow=self.parameters["training"]["use_optical_flow"])
         self.model.load_weights(weights_path=model_weights_path)
         self.model.eval()
 
@@ -81,7 +82,7 @@ class ASLRecognizer:
         print(f"Prediction of {prediction_time.hour}:{prediction_time.minute}:{prediction_time.second}\n",
               pd.DataFrame(index=[pd.to_datetime(pd.Timestamp.now(), format='%H:%M')],
                            data={
-                               "highest value": [torch.max(prediction).item()],
+                               "highest confidence": [torch.max(prediction).item()],
                                "mean": [torch.mean(prediction).item()],
                                "variance": [torch.var(prediction).item()],
                                "std": [torch.std(prediction).item()],

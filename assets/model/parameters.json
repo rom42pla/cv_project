@@ -3,11 +3,12 @@
         "only_static_letters": false,
         "data_augmentation": true,
         "frames_per_video": 16,
-        "epochs": 4,
+        "epochs": 50,
         "lr_features_extractor": 1e-05,
         "lr_classification": 0.001,
         "batch_size": 4,
         "num_workers": 2,
-        "pretrained_resnet": true
+        "pretrained_resnet": true,
+        "use_optical_flow": false
     }
 }
