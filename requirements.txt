@@ -8,3 +8,6 @@ numpy
 pandas
 opencv-python
 av
+
+# plotting
+seaborn

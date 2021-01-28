@@ -84,15 +84,6 @@ def get_optical_flow(X):
         optical_flow = np.clip(optical_flow, 0, 1)
         optical_flow = torch.as_tensor(optical_flow).to(original_device).permute(2, 0, 1)
 
-        # mask = np.zeros((*frame1.shape, 3))
-        # mask[..., 1] = 255
-        # magnitude, angle = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-        # mask[..., 0] = angle * 180 / np.pi / 2
-        # mask[..., 2] = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
-        # # Converts HSV to RGB (BGR) color representation
-        # rgb = cv2.cvtColor(mask.astype("float32"), cv2.COLOR_HSV2RGB)
-        # rgb[np.isnan(rgb)] = 0
-        # optical_flow = torch.as_tensor(rgb).to(self.device).permute(2, 0, 1) / 255
         return optical_flow
 
     X_lk = torch.zeros(size=(X.shape[0], X.shape[1] - 1, 2, *X.shape[3:])).to(original_device)
