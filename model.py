@@ -20,7 +20,7 @@ class ASLRecognizerModel(pl.LightningModule):
     def __init__(self, n_classes: int,
                  pretrained_resnet: bool = True,
                  lr_features_extractor: float = 1e-5, lr_classification: float = 1e-4,
-                 training_checkpoint_path: str = None, device: str = "auto",
+                 model_path: str = None, device: str = "auto",
                  use_optical_flow: bool = False):
         # checks that the device is correctly given
         assert device in {"cpu", "cuda", "auto"}
@@ -49,14 +49,14 @@ class ASLRecognizerModel(pl.LightningModule):
         )
 
         # weights path
-        assert not training_checkpoint_path or isinstance(training_checkpoint_path, str)
-        self.training_checkpoint_path = training_checkpoint_path
+        assert not model_path or isinstance(model_path, str)
+        self.model_path = model_path
 
         # learning rates
         self.lr_features_extractor, self.lr_classification_layer = lr_features_extractor, lr_classification
 
         # stats
-        self._last_train_epoch_stats, self._last_val_epoch_stats = [], []
+        self._last_train_epoch_stats, self._last_val_epoch_stats, self._epoch_counter = [], [], 0
         self.training_stats = pd.DataFrame(columns=["train_loss", "val_loss", "train_f1", "val_f1"])
         self.to(self.device_str)
 
@@ -153,17 +153,11 @@ class ASLRecognizerModel(pl.LightningModule):
                              for value in batch_output["y_pred"]]
         train_f1, val_f1 = f1_score(train_y, train_y_pred, average="macro"), \
                            f1_score(val_y, val_y_pred, average="macro")
-        # eventually saves the model
-        if not self.training_stats.empty:
-            best_val_f1 = np.max(self.training_stats["val_f1"])
-            if val_f1 > best_val_f1:
-                if self.training_checkpoint_path:
-                    self.save_weights(self.training_checkpoint_path)
-                    print(f"Found best model with F1 = {np.round(val_f1, 4)} (+{np.round(val_f1 - best_val_f1, 4)}) "
-                          f"and saved to {self.training_checkpoint_path}")
-                else:
-                    print(f"Found best model with F1 = {np.round(val_f1, 4)} (+{np.round(val_f1 - best_val_f1, 4)}) "
-                          f"but a filepath where to save the checkpoint is not given")
+        # saves model's weights
+        if self.model_path:
+            self.save_weights(model_path=self.model_path, name=f"ASLRecognizer_weights_epoch_{self._epoch_counter}.pth")
+            print(f"Model saved to {self.model_path}")
+
         # updates stats
         self.training_stats = self.training_stats.append({
             "train_loss": train_loss,
@@ -173,6 +167,7 @@ class ASLRecognizerModel(pl.LightningModule):
         }, ignore_index=True)
         print("\n", self.training_stats)
         self._last_train_epoch_stats, self._last_val_epoch_stats = [], []
+        self._epoch_counter += 1
 
     '''
     W E I G H T S
@@ -185,8 +180,9 @@ class ASLRecognizerModel(pl.LightningModule):
         self.load_state_dict(torch.load(join(weights_path)))
         self.to(self.device_str)
 
-    def save_weights(self, weights_path):
-        assert isinstance(weights_path, str)
+    def save_weights(self, model_path: str, name: str):
+        assert isinstance(model_path, str)
+        assert isinstance(name, str)
         self.cpu()
-        torch.save(self.state_dict(), weights_path)
+        torch.save(self.state_dict(), join(model_path, name))
         self.to(self.device_str)

@@ -72,7 +72,7 @@ class ASLRecognizer:
         # stops the thread
         self.is_running = False
 
-    def predict_letter(self, X, threshold=0.12):
+    def predict_letter(self, X):
         X, prediction_time = X.to(self.model.device_str), datetime.now()
         with torch.no_grad():
             prediction = self.model(X)
@@ -80,20 +80,9 @@ class ASLRecognizer:
         prediction_indexes = torch.argsort(prediction, descending=True)
         letter = self.vocab_reversed[prediction_indexes[0].item()]
         print(f"Prediction of {prediction_time.hour}:{prediction_time.minute}:{prediction_time.second}\n",
-              pd.DataFrame(index=[pd.to_datetime(pd.Timestamp.now(), format='%H:%M')],
-                           data={
-                               "highest confidence": [torch.max(prediction).item()],
-                               "mean": [torch.mean(prediction).item()],
-                               "variance": [torch.var(prediction).item()],
-                               "std": [torch.std(prediction).item()],
-                               "threshold std": [threshold],
-                               "is a letter?": [True if torch.std(prediction).item() >= threshold else False]
-                           }).to_string(index=True), "\n",
               pd.DataFrame(data={
                   "letter": [self.vocab_reversed[p.item()] for p in prediction_indexes][:5],
                   "confidence": [prediction[p].item() for p in prediction_indexes][:5]
               }).to_string(index=False))
-        # checks if the predicted letter is above the threshold
-        if torch.std(prediction) >= threshold:
-            self.predicted_letters += [letter]
+        self.predicted_letters += [letter]
         return letter
