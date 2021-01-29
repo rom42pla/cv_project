@@ -40,14 +40,14 @@ def show_img(img: torch.Tensor):
     plt.show()
 
 
-def build_vocab(targets: Union[list, tuple, set]):
-    assert isinstance(targets, list) or isinstance(targets, tuple) or isinstance(targets, set)
-    assert len(targets) > 0
-    vocab = {}
-    for target in targets:
-        if target not in vocab:
-            vocab[target] = len(vocab)
-    return vocab
+def build_vocab(targets: Union[list, tuple, set] = None):
+    # assert isinstance(targets, list) or isinstance(targets, tuple) or isinstance(targets, set)
+    # assert len(targets) > 0
+    # vocab = {}
+    # for target in targets:
+    #     if target not in vocab:
+    #         vocab[target] = len(vocab)
+    return {chr(v + 97): v for v in range(26)}
 
 
 def resize_videos(X, size):

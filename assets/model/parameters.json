@@ -3,7 +3,7 @@
         "only_static_letters": false,
         "data_augmentation": true,
         "frames_per_video": 16,
-        "epochs": 50,
+        "epochs": 10,
         "lr_features_extractor": 1e-05,
         "lr_classification": 0.001,
         "batch_size": 4,
