@@ -107,7 +107,6 @@ if __name__ == '__main__':
     # starts the training
     trainer = pl.Trainer(gpus=1 if model.device_str == "cuda" else 0,
                          precision=16, accumulate_grad_batches=1,
-                         limit_train_batches=0.01, limit_val_batches=0.1,
                          profiler=True,
                          max_epochs=parameters["training"]["epochs"])
     trainer.tune(model, train_dataloader, val_dataloader)
