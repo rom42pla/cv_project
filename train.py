@@ -82,7 +82,7 @@ if __name__ == '__main__':
                                     only_static_letters=args.only_static_letters)
     print(f"\t|train| = {len(ds_train)}\t|val| = {len(ds_val)}")
 
-    vocab = build_vocab(targets=set(ds_train.get_labels()))
+    vocab = build_vocab()
     if not isfile(vocab_path) or overwrite_parameters:
         save_json(content=vocab, filepath=vocab_path)
     ds_train.vocab, ds_val.vocab = vocab, vocab
