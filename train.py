@@ -54,16 +54,16 @@ if __name__ == '__main__':
     if not isfile(parameters_path) or overwrite_parameters:
         parameters = {
             "training": {
-                "only_static_letters": args.only_static_letters,
-                "data_augmentation": args.data_augmentation,
+                "only_static_letters": False,
+                "data_augmentation": True,
                 "frames_per_video": 16,
-                "epochs": args.epochs,
-                "lr_features_extractor": 1e-5,
-                "lr_classification": 1e-3,
-                "batch_size": args.batch_size,
+                "epochs": 10,
+                "lr_features_extractor": 1e-05,
+                "lr_classification": 0.001,
+                "batch_size": 4,
                 "num_workers": 2,
-                "pretrained_resnet": not args.not_pretrained_resnet,
-                "use_optical_flow": args.use_optical_flow
+                "pretrained_resnet": True,
+                "use_optical_flow": False
             }
         }
         save_json(content=parameters, filepath=parameters_path)
